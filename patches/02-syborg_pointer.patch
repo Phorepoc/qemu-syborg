@@ -1,0 +1,18 @@
+--- a/symbian-qemu-0.9.1-12/qemu-symbian-svp/plugins/syborg_pointer.py
++++ b/symbian-qemu-0.9.1-12/qemu-symbian-svp/plugins/syborg_pointer.py
+@@ -27,6 +27,15 @@
+     self.set_irq_level(0, (len(self.fifo) > 0) and self.int_enabled)
+ 
+   def event(self, x, y, z, buttons):
++    # Phorepoc fix: QEMU 0.9.1's monitor `mouse_button` reports the click
++    # at (0,0) (kbd_mouse_event(0,0,0,state)) -- useless for an ABSOLUTE device. A button change
++    # with x==y==0 keeps the last reported position, so `mouse_move X Y` + `mouse_button 1/0`
++    # is a tap at X,Y.
++    last = getattr(self, "last_xy", (0, 0))
++    if x == 0 and y == 0:
++      x, y = last
++    else:
++      self.last_xy = (x, y)
+     if len(self.fifo) < self.fifo_size:
+       self.fifo.append(self.fifo_entry(x, y, z, buttons))
+     self.update_irq()

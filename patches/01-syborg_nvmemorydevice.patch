@@ -1,0 +1,79 @@
+--- a/symbian-qemu-0.9.1-12/qemu-symbian-svp/plugins/syborg_nvmemorydevice.py
++++ b/symbian-qemu-0.9.1-12/qemu-symbian-svp/plugins/syborg_nvmemorydevice.py
+@@ -1,3 +1,13 @@
++# Phorepoc fix: 64-bit host pointer truncation.
++# The stock plugin calls the nvmemmory C library through ctypes with NO
++# argtypes/restype, so every argument defaults to a 32-bit c_int. On our
++# 64-bit qemu-system-arm build both the SyborgNVMemory* object pointer
++# (nvmem_create's return) and the shared-memory HOST pointer (memregion
++# host addr, e.g. 0x7f3d90a5c000) are 64-bit -- truncation made nvmem_read
++# scribble through a bogus 32-bit pointer and SIGSEGV qemu the moment the
++# FAT mount issued its first media transaction. Declare the real signatures
++# (nvmemmory.h): create->void*, obj args void*, host addr void*, the rest
++# int32/uint32.
+ #
+ # Copyright (c) 2010 Nokia Corporation and/or its subsidiary(-ies).
+ # All rights reserved.
+@@ -71,7 +81,7 @@
+     host_plat = platform.platform();
+ 
+     def create(self):
+-        print "syborg_nvmemorydevice: create\n"
++        print "syborg_nvmemorydevice: create (phorepoc-fixed plugin)\n"
+         
+         # Get properties
+         self.drive_size = self.properties["drive_size"]
+@@ -100,6 +110,23 @@
+         except Exception, e:
+             print repr(e)
+             sys.exit("syborg_nvmemorydevice: nvmemmory load failed")
++
++        # Phorepoc fix: real prototypes (see header comment)
++        L = self.nvmemlib
++        L.nvmem_create.restype = ctypes.c_void_p
++        L.nvmem_create.argtypes = [ctypes.c_uint32]
++        L.nvmem_reset.restype = ctypes.c_int32
++        L.nvmem_reset.argtypes = [ctypes.c_void_p]
++        L.nvmem_open.restype = ctypes.c_int32
++        L.nvmem_open.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
++        L.nvmem_get_sector_count.restype = ctypes.c_int32
++        L.nvmem_get_sector_count.argtypes = [ctypes.c_void_p, ctypes.c_int32]
++        L.nvmem_read.restype = None
++        L.nvmem_read.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
++                                 ctypes.c_int32, ctypes.c_uint32, ctypes.c_uint32]
++        L.nvmem_write.restype = None
++        L.nvmem_write.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
++                                  ctypes.c_int32, ctypes.c_uint32, ctypes.c_uint32]
+         
+         # Create an instance of non volatile memory handler class
+         self.obj = self.nvmemlib.nvmem_create( self.sector_size )
+@@ -155,6 +182,9 @@
+     def initialize_nvmem_callback(self):
+         self.CALLBACKFUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)
+         self.nvmem_callback = self.CALLBACKFUNC(self.nvmem_request_callback)
++        # Phorepoc fix: void* object pointer, real callback type
++        self.nvmemlib.nvmem_set_callback.restype = ctypes.c_int32
++        self.nvmemlib.nvmem_set_callback.argtypes = [ctypes.c_void_p, self.CALLBACKFUNC]
+         self.nvmemlib.nvmem_set_callback( self.obj, self.nvmem_callback )
+ 
+     def read_reg(self, offset):
+@@ -217,8 +247,17 @@
+             self.shared_memory_size = value
+         elif offset == self.R_NVMEM_ENABLE:
+             if( value > 0 ):
+-                self.nvmemory_memregion = qemu.memregion( self.shared_memory_base, self.shared_memory_size )
+-                self.nvmemory_sharedmemory_host_address = self.nvmemory_memregion.region_host_addr()
++                # Phorepoc fix (64-bit host): python-plugin.c qemu_py_memregion_init parses its
++                # uint32_t base/size with PyArg format "ll" -- a C long is 8 bytes on x86_64
++                # Linux, so parsing `size` zeroes `base` on the stack and the region silently
++                # maps guest-physical 0. Every transfer then went to/from phys 0 instead of the
++                # driver's buffer: the guest FS only ever saw its own caches (garbage `dir C:`,
++                # a valid pre-built image read back as KErrCorrupt) AND low guest RAM got
++                # scribbled. Map base 0 explicitly (immune to the clobber) and add the offset
++                # ourselves -- syborg RAM is one contiguous block from guest-physical 0.
++                self.nvmemory_memregion = qemu.memregion( 0, self.shared_memory_size )
++                self.nvmemory_sharedmemory_host_address = \
++                    self.nvmemory_memregion.region_host_addr() + self.shared_memory_base
+                 print"syborg_nvmemorydevice: host addr: 0x%08x" % (self.nvmemory_sharedmemory_host_address)
+         else:
+             reg_write_error = "syborg_nvmemorydevice: Illegal register write to: ", offset 

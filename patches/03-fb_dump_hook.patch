@@ -1,0 +1,69 @@
+--- a/symbian-qemu-0.9.1-12/qemu-symbian-svp/hw/fb_render_engine.c
++++ b/symbian-qemu-0.9.1-12/qemu-symbian-svp/hw/fb_render_engine.c
+@@ -549,17 +549,65 @@ static int prepare_ds_for_rendering(DisplayState *ds, render_data *rdata)
+         return gui_resize_vt(ds, get_screen_width(rdata), get_screen_height(rdata));
+ }
+ 
++/* --- Phorepoc hook: dump of the guest framebuffer to a PPM ---
++ * Gated by env var SYBORG_FB_DUMP (path). Dumps once, the first time a
++ * non-blank frame with real dimensions is scanned out, then goes quiet.
++ * Reads the SOURCE (guest) pixels QEMU is scanning, so a written file proves
++ * the fb device latched our BASE/WIDTH/HEIGHT and is reading our buffer.
++ * Assumes 32bpp source in memory-order [B][G][R][X] (what our test guest writes).
++ */
++static void phorepoc_maybe_dump_fb(const render_data *rdata)
++{
++    static int announced = 0;
++    const char *path = getenv("SYBORG_FB_DUMP");
++    uint32_t x, y, cols, rows;
++    FILE *f;
++
++    if (!path || rdata->blank)
++        return;
++    cols = rdata->cols;
++    rows = rdata->rows;
++    if (!cols || !rows)
++        return;
++
++    /* Overwrite the PPM every non-blank frame (last-write-wins), so the final file
++     * reflects late guest state (e.g. an on-screen console that scrolls over time),
++     * not just the first frame. Cheap at syborg's low refresh rate. */
++    f = fopen(path, "wb");
++    if (!f)
++        return;
++    fprintf(f, "P6\n%u %u\n255\n", cols, rows);
++    for (y = 0; y < rows; y++) {
++        const uint8_t *src = rdata->base_is_in_target
++            ? (const uint8_t *)host_ram_addr(calc_src_row_address_target(rdata, y))
++            : (const uint8_t *)calc_src_row_address_host(rdata, y);
++        for (x = 0; x < cols; x++) {
++            const uint8_t *px = src + x * 4;      /* [B][G][R][X] little-endian */
++            putc(px[2], f);                        /* R */
++            putc(px[1], f);                        /* G */
++            putc(px[0], f);                        /* B */
++        }
++    }
++    fclose(f);
++    if (!announced) {
++        announced = 1;
++        fprintf(stderr, "PHOREPOC: dumping %ux%u framebuffer to %s (per-frame)\n", cols, rows, path);
++    }
++}
++
+ void render(DisplayState *ds, render_data * rdata, int full_update)
+ {
+     if (prepare_ds_for_rendering(ds, rdata)) {
+ 
+         rdata->dest = ds_get_data(ds);
+-        
++
+         set_dest_data_from_ds(rdata, ds);
+ 
+         rdata->need_internal_update |= full_update;
+         update_render_data(rdata);
+ 
++        phorepoc_maybe_dump_fb(rdata);
++
+         if (rdata->blank) {
+             render_blank_screen(rdata);
+         } else {
