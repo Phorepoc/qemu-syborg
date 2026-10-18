@@ -29,6 +29,34 @@ docker run --rm -i -v "$PWD:/work" ghcr.io/phorepoc/qemu-syborg run-syborg /work
 Set `C_DRIVE=/work/c.img` to provide the C: drive as a FAT image (it is copied, not modified), and `DTB=...` to use
 another board description.
 
+## Watching it live
+
+This QEMU predates working VNC. There are two ways to see the guest and use it.
+
+**Any host (Windows, macOS, Linux): `syborg-view.py`.** Start the guest in live mode, which puts the QEMU monitor on
+TCP port 4444 and refreshes the screen dump five times a second:
+
+```sh
+docker run --rm -p 127.0.0.1:4444:4444 -v "$PWD:/work" -e LIVE=1 \
+    ghcr.io/phorepoc/qemu-syborg run-syborg /work/my.rom 3600
+python3 syborg-view.py fb.ppm 1
+```
+
+The window shows `fb.ppm` live. Type into it and the keys go to the guest (in the minigui shell, `dir`, `cd`,
+`C:\sys\bin` and so on). Mouse clicks and drags are sent as touch. Arguments are the dump file, a zoom factor and the
+monitor port. It needs only Python 3 with Tk, which the standard Windows and macOS installers include
+(`python3-tk` on Debian/Ubuntu).
+
+**Linux desktop: QEMU's own window.** The emulator is built with SDL, so with your X display passed into the
+container it opens a normal window, with keyboard and mouse:
+
+```sh
+docker run --rm -e DISPLAY -e SDL_VIDEODRIVER=x11 -v /tmp/.X11-unix:/tmp/.X11-unix -v "$PWD:/work" \
+    ghcr.io/phorepoc/qemu-syborg run-syborg /work/my.rom 3600
+```
+
+(`xhost +local:` may be needed to let the container connect. On Windows, WSLg's X server should work the same way.)
+
 ## Licence
 
 GPL-2.0 ([LICENSE](LICENSE)), as QEMU itself. The source and our patches are all in this repository and its pinned

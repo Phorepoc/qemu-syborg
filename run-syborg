@@ -1,12 +1,13 @@
 #!/bin/bash
 # run-syborg <rom> [seconds] -- boot a Symbian ROM on the Syborg board, headless.
 #   serial port 0      -> $SERIAL (default /work/serial.log)
-#   framebuffer        -> $FB as a PPM, refreshed once a second (default /work/fb.ppm)
+#   framebuffer        -> $FB as a PPM, refreshed every $FB_INTERVAL seconds (default /work/fb.ppm, 1 s)
 #   C: drive (FAT img) -> $C_DRIVE if set (copied, so the original stays untouched)
-#   QEMU monitor       -> stdin (pipe "sendkey d" etc. in to type)
+#   QEMU monitor       -> stdin (pipe "sendkey d" etc. in to type), or with LIVE=1 TCP port 4444
+#                         (publish it with -p 127.0.0.1:4444:4444 and use syborg-view.py, see the README)
 #   $DTB               -> another board description (default: the release's syborg.dtb)
 # QEMU rewrites the framebuffer dump every frame. Doing that straight onto a bind-mounted host folder is slow enough
-# to stall the guest, so it is written to RAM inside the container and copied out once a second.
+# to stall the guest, so it is written to RAM inside the container and copied out.
 set -eu
 ROM=$1
 SECS=${2:-60}
@@ -14,13 +15,18 @@ Q=/opt/qemu-syborg
 SERIAL=${SERIAL:-/work/serial.log}
 FB=${FB:-/work/fb.ppm}
 export SYBORG_FB_DUMP=/dev/shm/fb.ppm
+monitor=stdio
+if [ "${LIVE:-0}" = 1 ]; then
+	monitor=tcp:0.0.0.0:4444,server,nowait
+	FB_INTERVAL=${FB_INTERVAL:-0.2}
+fi
 mkdir -p /tmp/syborg && cd /tmp/syborg
 if [ -n "${C_DRIVE:-}" ]; then mkdir -p nvmemory && cp "$C_DRIVE" nvmemory/syborg_system.img; fi
-( while sleep 1; do cp "$SYBORG_FB_DUMP" "$FB.tmp" 2>/dev/null && mv -f "$FB.tmp" "$FB"; done ) &
+( while sleep "${FB_INTERVAL:-1}"; do cp "$SYBORG_FB_DUMP" "$FB.tmp" 2>/dev/null && mv -f "$FB.tmp" "$FB"; done ) &
 copier=$!
 rc=0
 timeout "$SECS" "$Q/qemu-system-arm" -L "$Q" -M "${DTB:-$Q/syborg.dtb}" -m 128 \
-	-kernel "$ROM" -serial "file:$SERIAL" -monitor stdio || rc=$?
+	-kernel "$ROM" -serial "file:$SERIAL" -monitor "$monitor" || rc=$?
 kill "$copier" 2>/dev/null || true
 cp "$SYBORG_FB_DUMP" "$FB" 2>/dev/null || true
 exit "$rc"
