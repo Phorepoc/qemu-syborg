@@ -1,0 +1,8 @@
+Phorepoc qemu-syborg
+Copyright The Phorepoc Authors (see AUTHORS) for the build files and patches
+
+Phorepoc was founded by Kyriakos Bompotis.
+
+QEMU is licensed under the GNU General Public License 2.0 (LICENSE); its copyright stays with the QEMU authors and the
+Symbian Foundation contributors of the oss.FCL.interim.QEMU tree it is built from. Our patches and build files are
+GPL-2.0 like the program they change. The published image carries the source it was built from.
