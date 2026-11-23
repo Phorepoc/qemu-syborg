@@ -1,11 +1,11 @@
 # qemu-syborg
 
 This is the emulator the Symbian Foundation used to run their 2010 open-source release: their fork of QEMU 0.9.1 with
-the **Syborg** virtual board. It's 15 years old and won't build on a modern system, so we've packaged it as a container
+the **Syborg** virtual board. It's 15 years old and won't build on a modern system, so Phorepoc packages it as a container
 image that still builds and runs today, `ghcr.io/phorepoc/qemu-syborg`.
 
 Inside, it's built on Debian squeeze, because the fork needs a 2011-era toolchain: gcc 4.4, Python 2.6, SDL 1.2 and
-libpng 1.2. The source comes from our fork of
+libpng 1.2. The source comes from Phorepoc's fork of
 [`oss.FCL.sf.adapt.Qemu`](https://github.com/Phorepoc/oss.FCL.sf.adapt.Qemu) at the commit in
 [`source.lock`](source.lock), plus three small patches:
 
@@ -24,7 +24,7 @@ docker run --rm -i -v "$PWD:/work" ghcr.io/phorepoc/qemu-syborg run-syborg /work
 
 That boots `my.rom` with no window for 90 seconds. The serial output goes to `serial.log`, the screen to `fb.ppm`, and
 whatever you type on stdin goes to the QEMU monitor, so piping `sendkey d` into it types into the guest. Set
-`C_DRIVE=/work/c.img` to give it a C: drive (we copy the image, so yours isn't changed), or `DTB=...` to use another
+`C_DRIVE=/work/c.img` to give it a C: drive (the image is copied, so the original is not changed), or `DTB=...` to use another
 board description.
 
 ## Watching it live
@@ -55,4 +55,4 @@ If the container can't connect to your display, run `xhost +local:` first. WSLg 
 
 ## License
 
-GPL-2.0, like QEMU itself. The source and our patches are all here and in the pinned fork, next to the published image.
+GPL-2.0, like QEMU itself. The source and Phorepoc's patches are all here and in the pinned fork, next to the published image.
